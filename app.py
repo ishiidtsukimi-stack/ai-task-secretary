@@ -18,13 +18,12 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
 @app.route("/", methods=["GET"])
 def home():
-    return "AIタスク秘書 is running"
+    return "AI task secretary is running"
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
+@app.route("/callback", methods=["POST"])
+def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
     handler.handle(body, signature)
     return "OK"
 
