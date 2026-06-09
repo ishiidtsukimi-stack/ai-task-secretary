@@ -60,8 +60,13 @@ def handle_message(event):
 
 def make_reply(text):
     global tasks
+    # 全角スペース→半角
+    text = text.replace(" ", " ").strip()
+    # 前後の空白削除
+    text = text.strip()
 
-    text = text.replace("　", " ").strip()
+    # 小文字化（英語対策）
+    text = text.lower()
     if text.startswith("追加 "):
         task_text = text.replace("追加 ", "", 1).strip()
 
@@ -75,7 +80,11 @@ def make_reply(text):
 
         return f"石井ちゃん、保存した。\n\n{len(tasks)}. {task_text}"
 
-    if text in ["タスク", "一覧", "リスト"]:
+    if text.replace(" ", "") in [
+    "タスク",
+    "一覧",
+    "リスト"
+]:
         if not tasks:
             return "今のタスクは空っぽ。"
 
