@@ -61,6 +61,7 @@ def handle_message(event):
 def make_reply(text):
     global tasks
 
+    text = text.replace("　", " ").strip()
     if text.startswith("追加 "):
         task_text = text.replace("追加 ", "", 1).strip()
 
@@ -85,7 +86,7 @@ def make_reply(text):
 
         return "\n".join(lines)
 
-    if text.startswith("完了 "):
+    if text.startswith("完了"):
         num = extract_number(text)
 
         if num is None:
@@ -97,7 +98,7 @@ def make_reply(text):
         tasks[num - 1]["done"] = True
         return f"完了にした。\n\n{num}. ✅ {tasks[num - 1]['title']}"
 
-    if text.startswith("削除 "):
+    if text.startswith("削除"):
         num = extract_number(text)
 
         if num is None:
