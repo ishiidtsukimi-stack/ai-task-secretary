@@ -1,5 +1,6 @@
 import os
 import re
+import sqlite3
 from flask import Flask, request, abort
 
 from linebot.v3 import WebhookHandler
@@ -21,8 +22,73 @@ LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# まずはメモリ保存。Render再起動で消える。
-tasks = []
+DB_PATH = "tasks.db"
+
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            done INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_tasks():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, title, done FROM tasks ORDER BY id ASC")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def add_task(title):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO tasks (title, done) VALUES (?, 0)", (title,))
+    conn.commit()
+    conn.close()
+
+
+def mark_done_by_number(number):
+    rows = get_tasks()
+    if number < 1 or number > len(rows):
+        return None
+
+    task_id, title, done = rows[number - 1]
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE tasks SET done = 1 WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+
+    return title
+
+
+def delete_by_number(number):
+    rows = get_tasks()
+    if number < 1 or number > len(rows):
+        return None
+
+    task_id, title, done = rows[number - 1]
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+
+    return title
+
+
+init_db()
 
 
 @app.route("/", methods=["GET"])
@@ -59,65 +125,60 @@ def handle_message(event):
 
 
 def make_reply(text):
-    global tasks
-    # 全角スペース→半角
-    text = text.replace(" ", " ").strip()
-    # 前後の空白削除
-    text = text.strip()
-
-    # 小文字化（英語対策）
+    text = text.replace("　", " ").strip()
     text = text.lower()
+    normalized = text.replace(" ", "")
+
     if text.startswith("追加 "):
         task_text = text.replace("追加 ", "", 1).strip()
 
         if not task_text:
             return "追加する内容が空っぽだよ。\n例：追加 明日14時 法務局"
 
-        tasks.append({
-            "title": task_text,
-            "done": False
-        })
+        add_task(task_text)
+        rows = get_tasks()
 
-        return f"石井ちゃん、保存した。\n\n{len(tasks)}. {task_text}"
+        return f"石井ちゃん、保存した。\n\n{len(rows)}. {task_text}"
 
-    if text.replace(" ", "") in [
-    "タスク",
-    "一覧",
-    "リスト"
-]:
-        if not tasks:
+    if normalized in ["タスク", "一覧", "リスト"]:
+        rows = get_tasks()
+
+        if not rows:
             return "今のタスクは空っぽ。"
 
         lines = ["今のタスク一覧"]
-        for i, task in enumerate(tasks, start=1):
-            mark = "✅" if task["done"] else "□"
-            lines.append(f"{i}. {mark} {task['title']}")
+        for i, row in enumerate(rows, start=1):
+            task_id, title, done = row
+            mark = "✅" if done == 1 else "□"
+            lines.append(f"{i}. {mark} {title}")
 
         return "\n".join(lines)
 
-    if text.startswith("完了"):
-        num = extract_number(text)
+    if normalized.startswith("完了"):
+        num = extract_number(normalized)
 
         if num is None:
             return "完了する番号を入れて。\n例：完了 1"
 
-        if num < 1 or num > len(tasks):
+        title = mark_done_by_number(num)
+
+        if title is None:
             return "その番号のタスクはないよ。"
 
-        tasks[num - 1]["done"] = True
-        return f"完了にした。\n\n{num}. ✅ {tasks[num - 1]['title']}"
+        return f"完了にした。\n\n{num}. ✅ {title}"
 
-    if text.startswith("削除"):
-        num = extract_number(text)
+    if normalized.startswith("削除"):
+        num = extract_number(normalized)
 
         if num is None:
             return "削除する番号を入れて。\n例：削除 1"
 
-        if num < 1 or num > len(tasks):
+        title = delete_by_number(num)
+
+        if title is None:
             return "その番号のタスクはないよ。"
 
-        deleted = tasks.pop(num - 1)
-        return f"削除した。\n\n{deleted['title']}"
+        return f"削除した。\n\n{title}"
 
     return (
         "石井ちゃん、今できるのはこれ。\n\n"
